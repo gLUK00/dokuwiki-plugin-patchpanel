@@ -106,7 +106,7 @@ class syntax_plugin_patchpanel extends DokuWiki_Syntax_Plugin {
 		// Make row and position start at 0.
 		$row--;
 		$position--;
-		
+
 		// Calculate things we need to create the image
 		// If there is no data for the port, set it as unknown
 		if($item['label'] == '' && $item['comment'] == '') {
@@ -123,21 +123,19 @@ class syntax_plugin_patchpanel extends DokuWiki_Syntax_Plugin {
 		$group = floor($position/$opt['groups']);
 
 		// Ethernet port image, with #STRINGS# to replace later
-		$iRatio = $imagewidth / $imageheight;
-		$iWidth = $imagewidth / 17;
-		$iHeight = $imageheight / 2.85;
-
-		$iBorderLeft = ( $iWidth / 13 ) * $position;
-		$iBorderTop = ( $iHeight / 2.8 ) * $row;
-		if( $position > 5 ){
-			$iBorderLeft += $iWidth * 0.3;
+		$iCountRows = intval( $opt[ 'rows' ] );
+		$iCountLines = intval( $opt[ 'ports' ] ) / $iCountRows;
+		$iWidthSector = $imagewidth / ( $iCountLines + 5 );
+		$iWidth = $iWidthSector - ( $iWidthSector / 13 );
+		$iHeight = $imageheight / ( $iCountRows * 1.66 );
+		$iBorderLeft = ( $iWidthSector / 13 );
+		$iBorderTop = ( $imageheight - ( $iHeight * $iCountRows ) ) / ( $iCountRows + 1 );
+		if( isset( $opt['groups' ] ) ){
+			$iNumGroup = floor( $position / intval( $opt['groups' ] ) );
+			$iBorderLeft += ( $iWidth * 0.2 ) * $iNumGroup;
 		}
-		if( $row > 0 ){
-			$iBorderTop -= $iHeight * 0.14;
-		}
-
-		$iPosX = ( ( $iWidth * $position ) + 2 * $iWidth ) + $iBorderLeft;
-		$iPosY = ( ( $iHeight * $row ) + 0.4 * $iHeight ) + $iBorderTop;
+		$iPosX = ( $iWidthSector * 2.5 ) + ( $iWidthSector * $position ) + $iBorderLeft;
+		$iPosY = ( $iBorderTop * ( $row + 1 ) ) + ( $iHeight * $row );
 
 		// for metallic conductors
 		$sConductors = '';
@@ -147,13 +145,13 @@ class syntax_plugin_patchpanel extends DokuWiki_Syntax_Plugin {
 
 		$image = '<g onmousemove="patchpanel_show_tooltip(evt, \'#REPLACECAPTION#\')" onmouseout="patchpanel_hide_tooltip()">
 			<rect x="'.$iPosX.'" y="'.$iPosY.'" width="'.$iWidth.'" height="'.$iHeight.'" fill="#REPLACECOLOR#"/>
-			<rect x="'.$iPosX.'" y="'.$iPosY.'" width="'.$iWidth.'" height="'.( $iHeight / 2.65 ).'" stroke-width="'.( $iRatio / 6 ).'" stroke="#000000" fill="#ffffff" ry="'.( $iRatio / 1.4 ).'" rx="'.( $iRatio / 1.5 ).'"/>
-			<text x="'.( $iPosX + ( $iWidth / 2 ) ).'" y="'.( $iPosY + ( $iHeight / 3.6 ) ).'" style="font-weight:bold;" text-anchor="middle" font-family="sans-serif" font-size="'.( $iRatio * 2.5 ).'" fill="#000000">#REPLACELABEL#</text>
+			<rect x="'.$iPosX.'" y="'.$iPosY.'" width="'.$iWidth.'" height="'.( $iHeight / 2.65 ).'" stroke-width="'.( $iWidth / 30 ).'" stroke="#000000" fill="#ffffff" ry="1.5" rx="1.5"/>
+			<text x="'.( $iPosX + ( $iWidth / 2 ) ).'" y="'.( $iPosY + ( $iHeight / 3.6 ) ).'" style="font-weight:bold;" text-anchor="middle" font-family="sans-serif" font-size="'.( $iWidth * 0.27 ).'" fill="#000000">#REPLACELABEL#</text>
 			<rect x="'.( $iPosX + ( $iWidth / 2.7 ) ).'" y="'.( $iPosY + ( $iHeight / 1.58 ) ).'" width="'.( $iWidth / 4 ).'" height="'.( $iHeight / 3.4 ).'" fill="#000000"/>
 			<rect x="'.( $iPosX + ( $iWidth / 3.5 ) ).'" y="'.( $iPosY + ( $iHeight / 1.58 ) ).'" width="'.( $iWidth / 2.35 ).'" height="'.( $iHeight / 4 ).'" fill="#000000"/>
 			<rect x="'.( $iPosX + ( $iWidth / 8 ) ).'" y="'.( $iPosY + ( $iHeight / 2 ) ).'" width="'.( $iWidth / 1.35 ).'" height="'.( $iHeight / 3 ).'" fill="#000000"/>
 			'.$sConductors.'
-			<text x="'.( $iPosX + ( $iWidth / 2 ) ).'" y="'.( $iPosY + ( $iHeight / 1.3 ) ).'" text-anchor="middle" font-family="sans-serif" font-size="'.( $iRatio * 2.6 ).'" fill="#ffffff">#REPLACEPORTNUMBER#</text>
+			<text x="'.( $iPosX + ( $iWidth / 2 ) ).'" y="'.( $iPosY + ( $iHeight / 1.25 ) ).'" text-anchor="middle" font-family="sans-serif" font-size="'.( $iWidth * 0.3 ).'" fill="#ffffff">#REPLACEPORTNUMBER#</text>
 		</g>';
 
 		// Replace color, setting the default if one wasn't specified
