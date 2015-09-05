@@ -4,19 +4,23 @@
  * 
  * Each patch panel is enclosed in <patchpanel>...</patchpanel> tags. The tag can have the
  * following parameters (all optional):
- *   name=<name>        The name of the patch panel (default: 'Patch Panel')
- *   ports=<number>     The total number of ports.  (default: 48)
- *   rows=<number>      Number of rows.  (default: 2)
- *   groups=<number>    Number of ports in a group (default: 6)
- *   rotate=[0,1]       If true, rotate the patch panel 90deg clockwise.
- *   switch=[0,1,2]     If 1, port numbering changes to match switches.
- *                      If 2, same as above, but starting from bottom to top. (e.g. 3Com/HP)
+ *   name=<name>             The name of the patch panel (default: 'Patch Panel')
+ *   ports=<number>          The total number of ports.  (default: 48)
+ *   rows=<number>           Number of rows.  (default: 2)
+ *   groups=<number>         Number of ports in a group (default: 6)
+ *   rotate=[0,1]            If true, rotate the patch panel 90deg clockwise.
+ *   switch=[0,1,2]          If 1, port numbering changes to match switches.
+ *                           If 2, same as above, but starting from bottom to top. (e.g. 3Com/HP)
+ *   labelDefault=<label>    Change a default label (default: '?')
  * Between these tags is a series of lines, each describing a port:
  * 
  *		<port> <label> [#color] [comment]
+ *		or
+ *		<port>:<portLabel> <label> [#color] [comment]
  * 
  * The fields:
  *  - <port>: The port number on the patch panel, starting from the top left.
+ *  - <portLabel>: Change a port label on the patch panel.
  *  - <label>: The label for the port.  Must be quoted if it contains spaces.
  *  - [#color]: Optional.  Specify an #RRGGBB HTML color code.
  *  - [comment]: Optional. All remaining text is treated as a comment.  
@@ -53,8 +57,6 @@ class syntax_plugin_patchpanel extends DokuWiki_Syntax_Plugin {
 		$this->Lexer->addSpecialPattern("<patchpanel[^>]*>.*?(?:<\/patchpanel>)",$mode,'plugin_patchpanel');
 	}
 
-
-
 	/*
 	 * Handle the matches
 	 */
@@ -70,7 +72,8 @@ class syntax_plugin_patchpanel extends DokuWiki_Syntax_Plugin {
 			'rows' => '2',
 			'groups' => '6',
 			'rotate' => 0,
-			'switch' => 0
+			'switch' => 0,
+			'labelDefault' => '?'
 		);
 
 		list($optstr,$opt['content']) = explode('>',$match,2);
@@ -84,7 +87,7 @@ class syntax_plugin_patchpanel extends DokuWiki_Syntax_Plugin {
 			$o = trim($o);
 			if (preg_match("/^name=(.+)/",$o,$matches)) {
 				// Remove beginning and ending quotes, then html encode
-				$opt['name'] = htmlspecialchars(trim($matches[1], '"\''), ENT_QUOTES);				
+				$opt['name'] = htmlspecialchars(trim($matches[1], '"\''), ENT_QUOTES);
 			} elseif (preg_match("/^ports=(\d+)/",$o,$matches)) {
 				$opt['ports'] = $matches[1];
 			} elseif (preg_match("/^rows=(\d+)/",$o,$matches)) {
@@ -95,6 +98,8 @@ class syntax_plugin_patchpanel extends DokuWiki_Syntax_Plugin {
 				$opt['rotate'] = $matches[1];
 			} elseif (preg_match("/^switch=(\d+)/",$o, $matches)) {
 				$opt['switch'] = $matches[1];
+			} elseif (preg_match("/^labelDefault=(.+)/",$o, $matches)) {
+				$opt['labelDefault'] = htmlspecialchars(trim($matches[1], '"\''), ENT_QUOTES);
 			}
 		}
 		return $opt;
@@ -110,9 +115,14 @@ class syntax_plugin_patchpanel extends DokuWiki_Syntax_Plugin {
 		// Calculate things we need to create the image
 		// If there is no data for the port, set it as unknown
 		if($item['label'] == '' && $item['comment'] == '') {
-			$item['label'] = '?';
+			$item['label'] = '';
 			$item['comment'] = 'This port has not been documented.';
 			$item['color'] = '#333';
+		}
+
+		// if use label default
+		if( trim( $item['label'] ) == '' && isset( $opt['labelDefault'] ) ){
+			$item['label'] = $opt['labelDefault'];
 		}
 
 		$fullcaption = "<div class=\'title\'>" . $opt['name'] . " Port $port</div>";
@@ -165,6 +175,9 @@ class syntax_plugin_patchpanel extends DokuWiki_Syntax_Plugin {
 		$image = str_replace("#REPLACECAPTION#", htmlspecialchars($fullcaption,ENT_QUOTES), $image);
 		
 		// Add port number
+		if( isset( $item[ 'labelPortNumber' ] ) ){
+			$port = $item[ 'labelPortNumber' ];
+		}
 		$image = str_replace("#REPLACEPORTNUMBER#", $port, $image);
 		
 		// Position the port
@@ -210,6 +223,11 @@ class syntax_plugin_patchpanel extends DokuWiki_Syntax_Plugin {
 				}
 				$csv .= '"' . $item['port'] . '","' . $item['label'] . '","' . trim($item['comment'], '"\' ') . '"' . "\n";
 				$item['comment'] = str_replace(array("\r","\n"), '', p_render('xhtml',p_get_instructions(trim($item['comment'], '"\'')),$info));
+				if( stripos( $item['port'], ':' ) !== false ){
+					$oLabelPort = explode( ':', $item['port'] );
+					$item[ 'port' ] = $oLabelPort[ 0 ];
+					$item[ 'labelPortNumber' ] = $oLabelPort[ 1 ];
+				}
 				$items[$item['port']] = $item;
 			} else {
 				$renderer->doc .= 'Syntax error on the following line: <pre style="color:red">'.hsc($line)."</pre>\n";
@@ -260,9 +278,8 @@ class syntax_plugin_patchpanel extends DokuWiki_Syntax_Plugin {
 				$startPortEven = 1;
 				$startPortOdd = 2;
 			} else {
-                                // MaxWinterstein 03.02.2015 modify port positioning according to 3com switches (2 above 1)
-				
-                                $startPortEven = 2;
+                // MaxWinterstein 03.02.2015 modify port positioning according to 3com switches (2 above 1)
+                $startPortEven = 2;
 				$startPortOdd = 1;
 			}
 			
