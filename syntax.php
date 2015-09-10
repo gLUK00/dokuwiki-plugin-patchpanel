@@ -153,7 +153,7 @@ class syntax_plugin_patchpanel extends DokuWiki_Syntax_Plugin {
 			$sConductors .= '<rect x="'.( ( $iPosX + ( $iWidth / 4 ) ) + ( ( $iWidth / 15 ) * $i ) ).'" y="'.( $iPosY + ( $iHeight / 2 ) ).'" width="'.( $iWidth / 32 ).'" height="'.( $iHeight / 15 ).'" fill="#ffff00"/>';
 		}
 
-		$image = '<g onmousemove="patchpanel_show_tooltip(evt, \'#REPLACECAPTION#\')" onmouseout="patchpanel_hide_tooltip()">
+		$image = ( isset( $item['url'] ) ? '<a xlink:href="'.$item['url'].'" target="_blank" style="text-decoration:none">' : '' ).'<g onmousemove="patchpanel_show_tooltip(evt, \'#REPLACECAPTION#\')" onmouseout="patchpanel_hide_tooltip()">
 			<rect x="'.$iPosX.'" y="'.$iPosY.'" width="'.$iWidth.'" height="'.$iHeight.'" fill="#REPLACECOLOR#"/>
 			<rect x="'.$iPosX.'" y="'.$iPosY.'" width="'.$iWidth.'" height="'.( $iHeight / 2.65 ).'" stroke-width="'.( $iWidth / 30 ).'" stroke="#000000" fill="#ffffff" ry="1.5" rx="1.5"/>
 			<text x="'.( $iPosX + ( $iWidth / 2 ) ).'" y="'.( $iPosY + ( $iHeight / 3.6 ) ).'" style="font-weight:bold;" text-anchor="middle" font-family="sans-serif" font-size="'.( $iWidth * 0.27 ).'" fill="#000000">#REPLACELABEL#</text>
@@ -162,7 +162,7 @@ class syntax_plugin_patchpanel extends DokuWiki_Syntax_Plugin {
 			<rect x="'.( $iPosX + ( $iWidth / 8 ) ).'" y="'.( $iPosY + ( $iHeight / 2 ) ).'" width="'.( $iWidth / 1.35 ).'" height="'.( $iHeight / 3 ).'" fill="#000000"/>
 			'.$sConductors.'
 			<text x="'.( $iPosX + ( $iWidth / 2 ) ).'" y="'.( $iPosY + ( $iHeight / 1.25 ) ).'" text-anchor="middle" font-family="sans-serif" font-size="'.( $iWidth * 0.3 ).'" fill="#ffffff">#REPLACEPORTNUMBER#</text>
-		</g>';
+		</g>'.( isset( $item['url'] ) ? '</a>' : '' );
 
 		// Replace color, setting the default if one wasn't specified
 		if(!substr($item['color'],0,1) == "#") { $item['color'] = '#CCCCCC'; }
@@ -221,6 +221,14 @@ class syntax_plugin_patchpanel extends DokuWiki_Syntax_Plugin {
 				for($x=3;$x<=$matchcount;$x++) {
 					$item['comment'] .= " ".( isset( $matches[0][$x] ) ? $matches[0][$x] : '' );
 				}
+
+				// if comment content a URL
+				$sReg_exUrl = "/(http|https|ftp|ftps)\:\/\/[a-zA-Z0-9\-\.]+\.[a-zA-Z]{2,3}(\/\S*)?/";
+				if( preg_match( $sReg_exUrl, $item['comment'], $oUrl ) ){
+					$item['comment'] = str_replace( $oUrl[ 0 ], '', $item['comment'] );
+					$item['url'] = $oUrl[ 0 ];
+				}
+
 				$csv .= '"' . $item['port'] . '","' . $item['label'] . '","' . trim($item['comment'], '"\' ') . '"' . "\n";
 				$item['comment'] = str_replace(array("\r","\n"), '', p_render('xhtml',p_get_instructions(trim($item['comment'], '"\'')),$info));
 				if( stripos( $item['port'], ':' ) !== false ){
