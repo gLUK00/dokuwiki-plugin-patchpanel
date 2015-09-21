@@ -12,6 +12,7 @@
  *   switch=[0,1,2]          If 1, port numbering changes to match switches.
  *                           If 2, same as above, but starting from bottom to top. (e.g. 3Com/HP)
  *   labelDefault=<label>    Change a default label (default: '?')
+ *   showSvg=[true,false]    Display show svg button (default: true)
  * Between these tags is a series of lines, each describing a port:
  * 
  *		<port> <label> [#color] [comment]
@@ -73,7 +74,8 @@ class syntax_plugin_patchpanel extends DokuWiki_Syntax_Plugin {
 			'groups' => '6',
 			'rotate' => 0,
 			'switch' => 0,
-			'labelDefault' => '?'
+			'labelDefault' => '?',
+			'showSvg' => true
 		);
 
 		list($optstr,$opt['content']) = explode('>',$match,2);
@@ -100,6 +102,8 @@ class syntax_plugin_patchpanel extends DokuWiki_Syntax_Plugin {
 				$opt['switch'] = $matches[1];
 			} elseif (preg_match("/^labelDefault=(.+)/",$o, $matches)) {
 				$opt['labelDefault'] = htmlspecialchars(trim($matches[1], '"\''), ENT_QUOTES);
+			} elseif (preg_match("/^showSvg=(.+)/",$o, $matches)) {
+				$opt['showSvg'] = strtolower(trim($matches[1], '"\'')) == 'true';
 			}
 		}
 		return $opt;
@@ -334,9 +338,12 @@ class syntax_plugin_patchpanel extends DokuWiki_Syntax_Plugin {
 		$renderer->doc .= "</div></div>";
 		
 		// Button to show the CSV version
-		$renderer->doc .= "<div class='patchpanel_csv'><span onclick=\"this.innerHTML = patchpanel_toggle_vis(document.getElementById('$csv_id'),'block')?'Hide CSV &uarr;':'Show CSV &darr;';\">Show CSV &darr;</span>";
-		$renderer->doc .= "<pre style='display:none;' id='$csv_id'>$csv</pre>\n";
-		$renderer->doc .= "</div></div>";
+		if( $opt['showSvg'] ){
+			$renderer->doc .= "<div class='patchpanel_csv'><span onclick=\"this.innerHTML = patchpanel_toggle_vis(document.getElementById('$csv_id'),'block')?'Hide CSV &uarr;':'Show CSV &darr;';\">Show CSV &darr;</span>"
+				."<pre style='display:none;' id='$csv_id'>$csv</pre>\n"
+				."</div>";
+		}
+		$renderer->doc .= "</div>";
 		
 		// Make sure the tooltip div gets created
 		$renderer->doc .= '<script type="text/javascript">patchpanel_create_tooltip_div();</script>';
