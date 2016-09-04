@@ -1,366 +1,441 @@
 <?php
-/*
- * Patch Panel Plugin: display a patch panel from a plaintext source
- * 
- * Each patch panel is enclosed in <patchpanel>...</patchpanel> tags. The tag can have the
- * following parameters (all optional):
- *   name=<name>             The name of the patch panel (default: 'Patch Panel')
- *   ports=<number>          The total number of ports.  (default: 48)
- *   rows=<number>           Number of rows.  (default: 2)
- *   groups=<number>         Number of ports in a group (default: 6)
- *   rotate=[0,1]            If true, rotate the patch panel 90deg clockwise.
- *   switch=[0,1,2]          If 1, port numbering changes to match switches.
- *                           If 2, same as above, but starting from bottom to top. (e.g. 3Com/HP)
- *   labelDefault=<label>    Change a default label (default: '?')
- *   showSvg=[true,false]    Display show svg button (default: true)
- * Between these tags is a series of lines, each describing a port:
- * 
- *		<port> <label> [#color] [comment]
- *		or
- *		<port>:<portLabel> <label> [#color] [comment]
- * 
- * The fields:
- *  - <port>: The port number on the patch panel, starting from the top left.
- *  - <portLabel>: Change a port label on the patch panel.
- *  - <label>: The label for the port.  Must be quoted if it contains spaces.
- *  - [#color]: Optional.  Specify an #RRGGBB HTML color code.
- *  - [comment]: Optional. All remaining text is treated as a comment.  
+/**
+ * Info Plugin: switchpanel
  *
- * You can also include comment lines starting with a pound sign #.
- *
- * @license    GPL 2 (http://www.gnu.org/licenses/gpl.html)
- * @author     Grant Emsley <grant@emsley.ca>
- * @version    2014.05.11.1
- *
- * Based on the rack plugin (https://www.dokuwiki.org/plugin:rack) by Tyler Bletsch <tyler.bletsch@netapp.com>
+ * @license	GPL 2 (http://www.gnu.org/licenses/gpl.html)
+ * @author	 Bertrand Fruchet <bertrand@greenitsolutions.fr>
+ * @author	 Emmanuel Hidalgo <manu@greenitsolutions.fr>
  * 
+ * Based on the dokuwiki-plugin-patchpanel plugin (https://github.com/grantemsley/dokuwiki-plugin-patchpanel) by Grant Emsley <grant@emsley.ca>
  */
+// must be run within Dokuwiki
+if(!defined('DOKU_INC')) die();
 
-if(!defined('DOKU_INC')) define('DOKU_INC',realpath(dirname(__FILE__).'/../../').'/');
-if(!defined('DOKU_PLUGIN')) define('DOKU_PLUGIN',DOKU_INC.'lib/plugins/');
-require_once(DOKU_PLUGIN.'syntax.php');
-
-/*
+/**
  * All DokuWiki plugins to extend the parser/rendering mechanism
  * need to inherit from this class
  */
-class syntax_plugin_patchpanel extends DokuWiki_Syntax_Plugin {
-	function getType(){
-		return 'substition';
-	}
-	function getSort(){
-		return 155;
-	}
-	function getPType(){
-		return 'block';
-	}
-	function connectTo($mode) {
-		$this->Lexer->addSpecialPattern("<patchpanel[^>]*>.*?(?:<\/patchpanel>)",$mode,'plugin_patchpanel');
-	}
+class syntax_plugin_switchpanel extends DokuWiki_Syntax_Plugin {
+	private $_sName = "switchpanel";
+	private $_oTagsContent = array( 'line'=>array( 'number', 'color', 'case' ), 'text'=>array( 'bgColor', 'color', 'size', 'brColor', 'brRadius' ), 'heightBar'=>array( 'height' ) );
+	private $_oTagsItemsContent = array( 'line_items'=>array( 'color', 'text', 'link', 'case', 'target' ) );
 
-	/*
-	 * Handle the matches
-	 */
-	function handle($match, $state, $pos, &$handler){
+	function getType(){ return 'substition'; }
+	function getSort(){ return 155; }
+	function getPType(){ return 'block'; }
+
+	function connectTo($mode){
+		$this->Lexer->addSpecialPattern( "<switchpanel[^>]*>.*?(?:<\/switchpanel>)", $mode, 'plugin_switchpanel' );
+	}
 	
-		// remove "</patchpanel>" from the match
-		$match = substr($match,0,-13);
+	/**
+	 * Handle the match
+	 *
+	 * @param   string       $match   The text matched by the patterns
+	 * @param   int          $state   The lexer state for the match
+	 * @param   int          $pos	 The character position of the matched text
+	 * @param   Doku_Handler $handler The Doku_Handler object
+	 * @return  array Return an array with all data you want to use in render
+	 */
+	function handle($match, $state, $pos, Doku_Handler $handler){
 
-		//default options
+		// remove "</switchpanel>" from the match
+		$match = trim( substr( $match, 0, ( strlen( $this->_sName ) + 3 ) * -1 ) );
+
+		// default options
 		$opt = array(
-			'name' => 'Patch Panel',
-			'ports' => 48,
-			'rows' => '2',
-			'groups' => '6',
-			'rotate' => 0,
-			'switch' => 0,
-			'labelDefault' => '?',
-			'showSvg' => true
+			'logo'=>DOKU_BASE.'lib/plugins/switchpanel/images/greenIt.svg',
+			'logoLink'=>'http://www.greenitsolutions.fr/',
+			'target'=>'_blank',
+			'showEars'=>true,
+			'case'=>'rj45',
+			'group'=>0,
+			'groupSeparatorWidth'=>18,
+			'color'=>'#ccc',
+			'elementWidth'=>36,
+			'elementHeight'=>45,
+			'elementSeparatorWidth'=>5,
+			'elementSeparatorHeight'=>5,
+			'textSize'=>20,
+			'textColor'=>'#fff',
+			'textBgColor'=>'',
+			'textBrColor'=>'',
+			'textBrRadius'=>'',
+			'barHeight'=>5,
+			'screwHeightSpace'=>60,
+			'screwHeight'=>15,
+			'screwWidth'=>20,
+			'screwColor'=>'#fff',
+			'switchColor'=>'#808080',
+			'content'=>array()
 		);
 
-		list($optstr,$opt['content']) = explode('>',$match,2);
-		unset($match);
-		// parse options
-		// http://stackoverflow.com/questions/2202435/php-explode-the-string-but-treat-words-in-quotes-as-a-single-word
-		preg_match_all('/\w*?="(?:\\.|[^\\"])*"|\S+/', $optstr, $matches);
-		
-		$optsin = $matches[0];
-		foreach($optsin as $o){
-			$o = trim($o);
-			if (preg_match("/^name=(.+)/",$o,$matches)) {
-				// Remove beginning and ending quotes, then html encode
-				$opt['name'] = htmlspecialchars(trim($matches[1], '"\''), ENT_QUOTES);
-			} elseif (preg_match("/^ports=(\d+)/",$o,$matches)) {
-				$opt['ports'] = $matches[1];
-			} elseif (preg_match("/^rows=(\d+)/",$o,$matches)) {
-				$opt['rows'] = $matches[1];
-			} elseif (preg_match("/^groups=(\d+)/",$o,$matches)) {
-				$opt['groups'] = $matches[1];
-			} elseif (preg_match("/^rotate=(\d+)/",$o, $matches)) {
-				$opt['rotate'] = $matches[1];
-			} elseif (preg_match("/^switch=(\d+)/",$o, $matches)) {
-				$opt['switch'] = $matches[1];
-			} elseif (preg_match("/^labelDefault=(.+)/",$o, $matches)) {
-				$opt['labelDefault'] = htmlspecialchars(trim($matches[1], '"\''), ENT_QUOTES);
-			} elseif (preg_match("/^showSvg=(.+)/",$o, $matches)) {
-				$opt['showSvg'] = strtolower(trim($matches[1], '"\'')) == 'true';
+		// recovered the first line and content
+		$iPosFirstLine = stripos( $match, "\n" );
+		$sFirstLines = substr( $match, 0, $iPosFirstLine );
+		$sContent = trim( substr( $match, $iPosFirstLine ) );
+		unset( $match );
+
+		// treatment of first-line
+		$sFirstLines = trim( substr( $sFirstLines, strlen( $this->_sName ) + 1 ) );
+		$sFirstLines = trim( rtrim( $sFirstLines, '>' ) );
+		$oAttributs = explode( ' ', $sFirstLines );
+		foreach($oAttributs as $sKeyVal ){
+			if( trim( $sKeyVal ) == '' || stripos( $sKeyVal, '=' ) === false ){
+				continue;
+			}
+			list( $sKey, $sVal ) = explode( '=', $sKeyVal );
+			$sVal = trim( $sVal, '"' );
+			if( $sKey == 'content' || !array_key_exists( $sKey, $opt ) ){
+				continue;
+			}
+
+			// change a default value
+			if( is_bool( $opt[ $sKey ] ) ){
+				$opt[ $sKey ] = ( strtolower( $sVal ) == 'true' );
+			}else if( is_int( $opt[ $sKey ] ) ){
+				$opt[ $sKey ] = intval( $sVal );
+			}else{
+				$opt[ $sKey ] = $sVal;
 			}
 		}
+
+		// anonymous function recovery options
+		$fGetOptions = function( $sOptions, $oFilters = NULL ){
+			$oOptions = array();
+			do{
+				$sOptions = trim( $sOptions, ',' );
+				if( $sOptions == '' ){
+					break;
+				}
+				$iPosStop = stripos( $sOptions, '=' );
+				if( $sOptions === false ){
+					break;
+				}
+				$sKey = trim( substr( $sOptions, 0, $iPosStop ) );
+				$sOptions = trim( substr( $sOptions, $iPosStop + 1 ) );
+
+				$iPosStop = stripos( $sOptions, ',' );
+				if( $iPosStop === false ){
+					$iPosStop = strlen( $sOptions );
+				}
+				$sValue = trim( substr( $sOptions, 0, $iPosStop ) );
+
+				if( substr( $sOptions, 0, 1 ) == '"' ){
+					$iPosStop = stripos( $sOptions, '"', 1 );
+					$sValue = trim( substr( $sOptions, 0, $iPosStop ), '"' );
+					$iPosStop++;
+				}
+
+				// control of coherence options
+				if( !is_null( $oFilters ) && !in_array( $sKey, $oFilters ) ){
+
+					// error, the option is not found
+					echo 'Syntax error : the option is not found : <pre style="color:red"> key : '.$sKey.', value : '.$sOptions."</pre>\n";
+					$sOptions = trim( substr( $sOptions, $iPosStop ) );
+					continue;
+				}
+
+				// recording option
+				$oOptions[ $sKey ] = $sValue;
+				$sOptions = trim( substr( $sOptions, $iPosStop ) );
+
+			}while( true );
+
+			return $oOptions;
+		};
+
+		// analysis and processing of content
+		$oContent = array();
+		$oLines = explode( "\n", $sContent );
+		$sContext = '';
+		foreach( $oLines as $sLine ){
+
+			// recovery of the line
+			$sLine = trim( $sLine );
+			if( $sLine == '' || substr( $sLine, 0, 1 ) == '#' ){
+				continue;
+			}
+
+			// determine if the context has to be taken into account
+			if( strlen( $sLine ) > 2 && substr( $sLine, 0, 2 ) == '==' ){
+
+				// recovered and the control context
+				$sContext = trim( substr( $sLine, 2 ) );
+				$iPosSep = stripos( $sLine, ':' );
+				if( $iPosSep !== false ){
+					$sContext = trim( substr( $sLine, 2, $iPosSep - 2 ) );
+				}
+				if( !array_key_exists( $sContext, $this->_oTagsContent ) ){
+
+					// error, the context was not found
+					echo 'Syntax error : the context was not found : <pre style="color:red"> context : '.$sContext.', line : '.$sLine."</pre>\n";
+					continue;
+				}
+
+				// if there are options
+				$oOptions = array();
+				if( $iPosSep !== false ){
+					$sOptions = substr( $sLine, $iPosSep + 1 );
+					$oOptions = $fGetOptions( $sOptions, $this->_oTagsContent[ $sContext ] );
+				}
+
+				// adding the new context
+				$oContent[] = array( 'type'=>$sContext, 'options'=>$oOptions, 'data'=>NULL );
+				continue;
+			}
+
+			// recovery of the element
+			$oElement = &$oContent[ count( $oContent ) - 1 ];
+
+			// if the line contains options
+			$oOptions = NULL;
+			$iPosSep = stripos( $sLine, ':' );
+			if( $iPosSep !== false && array_key_exists( $oElement[ 'type' ].'_items', $this->_oTagsItemsContent ) ){
+				$sOptions = trim( trim( substr( $sLine, $iPosSep ), ':' ) );
+				$sLine = substr( $sLine, 0, $iPosSep );
+				$oOptions = $fGetOptions( $sOptions, $this->_oTagsItemsContent[ $oElement[ 'type' ].'_items' ] );
+			}
+
+			// get last context
+			if( $oElement[ 'type' ] == 'line' ){
+				if( $oElement[ 'data' ] == NULL ){
+					$oElement[ 'data' ] = array();
+				}
+
+				$oInfos = explode( ',', $sLine );
+				$oLine = array( 'number'=>$oInfos[ 0 ] );
+				if( count( $oInfos ) > 1 ){
+					$oLine[ 'label' ] = $oInfos[ 1 ];
+				}
+				if( count( $oInfos ) > 2 ){
+					$oLine[ 'title' ] = $oInfos[ 2 ];
+				}
+				
+				// propagation properties
+				$oLine[ 'options' ] = array();
+				foreach( array( 'color', 'case' ) as $sProp ){
+					if( !isset( $oElement[ 'options' ][ $sProp ] ) ){
+						$oElement[ 'options' ][ $sProp ] = $opt[ $sProp ];
+						$oLine[ 'options' ][ $sProp ] = $oElement[ 'options' ][ $sProp ];
+					}
+					$oLine[ 'options' ][ $sProp ] = $oElement[ 'options' ][ $sProp ];
+				}
+				if( !is_null( $oOptions ) ){
+					foreach( $oOptions as $sKey=>$oValue ){
+						$oLine[ 'options' ][ $sKey ] = $oValue;
+					}
+				}
+				$oElement[ 'data' ][ intval( $oInfos[ 0 ] ) ] = $oLine;
+
+			}else if( $oElement[ 'type' ] == 'text' ){
+				$oElement[ 'data' ] .= $sLine;
+			}
+		}
+
+		// update content
+		$opt[ 'content' ] = $oContent;
 		return $opt;
-	}
-
-	
-	// This function creates an SVG image of an ethernet port and positions it on the patch panel.
-	function ethernet_svg($row, $position, $port, $item, $opt, $imagewidth, $imageheight) {
-		// Make row and position start at 0.
-		$row--;
-		$position--;
-
-		// Calculate things we need to create the image
-		// If there is no data for the port, set it as unknown
-		if($item['label'] == '' && $item['comment'] == '') {
-			$item['label'] = '';
-			$item['comment'] = 'This port has not been documented.';
-			$item['color'] = '#333';
-		}
-
-		// if use label default
-		if( trim( $item['label'] ) == '' && isset( $opt['labelDefault'] ) ){
-			$item['label'] = $opt['labelDefault'];
-		}
-
-		$fullcaption = "<div class=\'title\'>" . $opt['name'] . " Port $port</div>";
-		$fullcaption .= "<div class=\'content\'>";
-		$fullcaption .= "<table><tr><th>Label:</th><td>" . $item['label'] . "</td></tr>";
-		$fullcaption .= "<tr><th>Comment:</th><td>" . $item['comment'] . "</td></tr><table></div>";
-		
-		$group = floor($position/$opt['groups']);
-
-		// Ethernet port image, with #STRINGS# to replace later
-		$iCountRows = intval( $opt[ 'rows' ] );
-		$iCountLines = intval( $opt[ 'ports' ] ) / $iCountRows;
-		$iWidthSector = $imagewidth / ( $iCountLines + 5 );
-		$iWidth = $iWidthSector - ( $iWidthSector / 13 );
-		$iHeight = $imageheight / ( $iCountRows * 1.66 );
-		$iBorderLeft = ( $iWidthSector / 13 );
-		$iBorderTop = ( $imageheight - ( $iHeight * $iCountRows ) ) / ( $iCountRows + 1 );
-		if( isset( $opt['groups' ] ) ){
-			$iNumGroup = floor( $position / intval( $opt['groups' ] ) );
-			$iBorderLeft += ( $iWidth * 0.2 ) * $iNumGroup;
-		}
-		$iPosX = ( $iWidthSector * 2.5 ) + ( $iWidthSector * $position ) + $iBorderLeft;
-		$iPosY = ( $iBorderTop * ( $row + 1 ) ) + ( $iHeight * $row );
-
-		// for metallic conductors
-		$sConductors = '';
-		for( $i=0; $i<8; $i++ ){
-			$sConductors .= '<rect x="'.( ( $iPosX + ( $iWidth / 4 ) ) + ( ( $iWidth / 15 ) * $i ) ).'" y="'.( $iPosY + ( $iHeight / 2 ) ).'" width="'.( $iWidth / 32 ).'" height="'.( $iHeight / 15 ).'" fill="#ffff00"/>';
-		}
-
-		$image = ( isset( $item['url'] ) ? '<a xlink:href="'.$item['url'].'" target="_blank" style="text-decoration:none">' : '' ).'<g onmousemove="patchpanel_show_tooltip(evt, \'#REPLACECAPTION#\')" onmouseout="patchpanel_hide_tooltip()">
-			<rect x="'.$iPosX.'" y="'.$iPosY.'" width="'.$iWidth.'" height="'.$iHeight.'" fill="#REPLACECOLOR#"/>
-			<rect x="'.$iPosX.'" y="'.$iPosY.'" width="'.$iWidth.'" height="'.( $iHeight / 2.65 ).'" stroke-width="'.( $iWidth / 30 ).'" stroke="#000000" fill="#ffffff" ry="1.5" rx="1.5"/>
-			<text x="'.( $iPosX + ( $iWidth / 2 ) ).'" y="'.( $iPosY + ( $iHeight / 3.6 ) ).'" style="font-weight:bold;" text-anchor="middle" font-family="sans-serif" font-size="'.( $iWidth * 0.27 ).'" fill="#000000">#REPLACELABEL#</text>
-			<rect x="'.( $iPosX + ( $iWidth / 2.7 ) ).'" y="'.( $iPosY + ( $iHeight / 1.58 ) ).'" width="'.( $iWidth / 4 ).'" height="'.( $iHeight / 3.4 ).'" fill="#000000"/>
-			<rect x="'.( $iPosX + ( $iWidth / 3.5 ) ).'" y="'.( $iPosY + ( $iHeight / 1.58 ) ).'" width="'.( $iWidth / 2.35 ).'" height="'.( $iHeight / 4 ).'" fill="#000000"/>
-			<rect x="'.( $iPosX + ( $iWidth / 8 ) ).'" y="'.( $iPosY + ( $iHeight / 2 ) ).'" width="'.( $iWidth / 1.35 ).'" height="'.( $iHeight / 3 ).'" fill="#000000"/>
-			'.$sConductors.'
-			<text x="'.( $iPosX + ( $iWidth / 2 ) ).'" y="'.( $iPosY + ( $iHeight / 1.25 ) ).'" text-anchor="middle" font-family="sans-serif" font-size="'.( $iWidth * 0.3 ).'" fill="#ffffff">#REPLACEPORTNUMBER#</text>
-		</g>'.( isset( $item['url'] ) ? '</a>' : '' );
-
-		// Replace color, setting the default if one wasn't specified
-		if(!substr($item['color'],0,1) == "#") { $item['color'] = '#CCCCCC'; }
-		$image = str_replace("#REPLACECOLOR#", $item['color'], $image);
-		
-		// Replace label
-		$image = str_replace("#REPLACELABEL#", $item['label'], $image);
-		
-		// Replace caption
-		$image = str_replace("#REPLACECAPTION#", htmlspecialchars($fullcaption,ENT_QUOTES), $image);
-		
-		// Add port number
-		if( isset( $item[ 'labelPortNumber' ] ) ){
-			$port = $item[ 'labelPortNumber' ];
-		}
-		$image = str_replace("#REPLACEPORTNUMBER#", $port, $image);
-		
-		// Position the port
-		$image = str_replace("#REPLACEX#", 80+$position*43+$group*10, $image); // offset from edge+width of preceeding ports+group spacing
-		$image = str_replace("#REPLACEY#", 20+$row*66, $image);
-		return $image;
 	}
 	
 	/*
 	 * Create output
 	 */
 	function render($mode, &$renderer, $opt) {
-		if($mode == 'metadata') return false;
-		
-		$content = $opt['content'];
-		// clear any trailing or leading empty lines from the data set
-		$content = preg_replace("/[\r\n]*$/","",$content);
-		$content = preg_replace("/^\s*[\r\n]*/","",$content);
+		if( $mode == 'metadata' ){ return false; }
 
-		$items = array();
-		
-		$csv_id = uniqid("csv_");
-		$csv = "Port,Label,Comment\n";
-		
-		foreach (explode("\n",$content) as $line) {
-			$item = array();
-			if (!preg_match("/^\s*\d+/",$line)) { continue; } // skip lines that don't start with a port number
+		// determines the maximum number of elements in width &
+		// determine the position of the minimum and maximum index
+		$iNbrElementsWidth = 0;
+		$oElements = $opt[ 'content' ];
+		foreach( $oElements as &$oElement ){
+			if( $oElement[ 'type' ] != 'line' ){
+				continue;
+			}
+			$MinIndex = 1000;
+			$iMaxIndex = 0;
+			if( isset( $oElement[ 'data' ] ) ){
+				foreach( $oElement[ 'data' ] as $iLine=>$oLine ){
+					if( $MinIndex > $iLine ){
+						$MinIndex = $iLine;
+					}
+					if( $iMaxIndex < $iLine ){
+						$iMaxIndex = $iLine;
+					}
+				}
+			}
+			$iDiff = ( $iMaxIndex - $MinIndex ) + 1;
+			if( $iNbrElementsWidth < $iDiff ){
+				$iNbrElementsWidth = $iDiff;
+			}
+			if( isset( $oElement[ 'options' ][ 'number' ] ) && $oElement[ 'options' ][ 'number' ] > $iNbrElementsWidth ){
+				$iNbrElementsWidth = $oElement[ 'options' ][ 'number' ];
+			}
 			
-			// split on whitespace, keep quoted strings together
-			$matchcount = preg_match_all('/"(?:\\.|[^\\"])*"|\S+/',$line,$matches);
-			if ($matchcount > 0) {
-				$item['port'] = $matches[0][0];
-				$item['label'] = htmlspecialchars(trim($matches[0][1], '"\''), ENT_QUOTES);
-				// If 3rd element starts with #, it's a color.  Otherwise part of the comment
-				if (substr($matches[0][2], 0, 1) == "#") {
-					$item['color'] = $matches[0][2];
-				} else {
-					$item['comment'] = $matches[0][2];
+			// re-index elements
+			if( isset( $oElement[ 'data' ] ) ){
+				ksort( $oElement[ 'data' ] );
+				$oTmpData = array();
+				for( $i=$MinIndex; $i<=$iMaxIndex; $i++ ){
+					$oTmpData[ $i ] = isset( $oElement[ 'data' ][ $i ] ) ?
+						$oElement[ 'data' ][ $i ] :
+						array( 'number'=>$i, 'label'=>'', 
+							'options'=>array( 'color'=>$oElement[ 'options' ][ 'color' ], 'case'=>$oElement[ 'options' ][ 'case' ] ) );
+				}			
+				$oData = array();
+				foreach( $oTmpData as $oLine ){
+					$oData[ count( $oData ) ] = $oLine;
 				}
-				// Any remaining text is part of the comment.
-				for($x=3;$x<=$matchcount;$x++) {
-					$item['comment'] .= " ".( isset( $matches[0][$x] ) ? $matches[0][$x] : '' );
-				}
+				$oElement[ 'data' ] = $oData;
+			}
+		}
 
-				// if comment content a URL
-				$sReg_exUrl = "/(http|https|ftp|ftps)\:\/\/[a-zA-Z0-9\-\.]+\.[a-zA-Z]{2,3}(\/\S*)?/";
-				if( preg_match( $sReg_exUrl, $item['comment'], $oUrl ) ){
-					$item['comment'] = str_replace( $oUrl[ 0 ], '', $item['comment'] );
-					$item['url'] = $oUrl[ 0 ];
-				}
+		// if there are groups
+		$iWidthGroup = 0;
+		if( $opt[ 'group' ] > 0 ){
+			$iWidthGroup = floor( $iNbrElementsWidth / $opt[ 'group' ] ) * $opt[ 'groupSeparatorWidth' ];
+			if( $iNbrElementsWidth % $opt[ 'group' ] == 0 ){
+				$iWidthGroup -= $opt[ 'groupSeparatorWidth' ];
+			}
+		}
 
-				$csv .= '"' . $item['port'] . '","' . $item['label'] . '","' . trim($item['comment'], '"\' ') . '"' . "\n";
-				$item['comment'] = str_replace(array("\r","\n"), '', p_render('xhtml',p_get_instructions(trim($item['comment'], '"\'')),$info));
-				if( stripos( $item['port'], ':' ) !== false ){
-					$oLabelPort = explode( ':', $item['port'] );
-					$item[ 'port' ] = $oLabelPort[ 0 ];
-					$item[ 'labelPortNumber' ] = $oLabelPort[ 1 ];
+		// calculates the width
+		$iGroup = $opt[ 'group' ];
+		$iWidthSvg = $iWidthGroup +
+			( $opt[ 'showEars' ] ? ( $opt[ 'elementWidth' ] * 4 ) : ( $opt[ 'elementSeparatorWidth' ] * 2 ) ) + // if show Ears
+			( $iNbrElementsWidth * $opt[ 'elementWidth' ] ) +
+			( $iNbrElementsWidth > 1 ? ( ( $iNbrElementsWidth - 1 ) * $opt[ 'elementSeparatorWidth' ] ) : 0 );
+
+		// calculates the height
+		$iHeightSvg = 0;
+		foreach( $oElements as &$oElement ){
+			$iHeightSvg += $opt[ 'elementSeparatorHeight' ];
+			if( $oElement[ 'type' ] == 'line' ){
+				$iHeightSvg += $opt[ 'elementHeight' ];
+			}else if( $oElement[ 'type' ] == 'text' ){
+				if( isset( $oElement[ 'options' ][ 'size' ] ) ){
+					$iHeightSvg += $oElement[ 'options' ][ 'size' ];
+				}else{
+					$iHeightSvg += $opt[ 'textSize' ];
 				}
-				$items[$item['port']] = $item;
-			} else {
-				$renderer->doc .= 'Syntax error on the following line: <pre style="color:red">'.hsc($line)."</pre>\n";
+			}else if( $oElement[ 'type' ] == 'heightBar' ){
+				$iBarHeight = $opt[ 'barHeight' ];
+				if( isset( $oElement[ 'options' ][ 'height' ] ) ){
+					$iBarHeight = $oElement[ 'options' ][ 'height' ];
+				}
+				$iHeightSvg += $iBarHeight;
 			}
 		}
 		
-		// Calculate the size of the image and port spacing
-		$portsPerRow = ceil($opt['ports']/$opt['rows']);
-		$groups = ceil($portsPerRow/$opt['groups']);
-		$imagewidth = 80+$portsPerRow*43+$groups*10+60;
-		$imageheight = 20+$opt['rows']*66;
-
-		$renderer->doc .= '<div class="patchpanel">';
-		$renderer->doc .= '<div class="patchpanel_container">';
+		// the last element
+		if( count( $oElements ) > 0 ){
+			$iHeightSvg += $opt[ 'elementSeparatorHeight' ];
+		}
 		
-		if( $opt['rotate'] ){
-			// Draw an outer SVG and transform the inner one 
-			$renderer->doc .= "<div style='height:" . $imagewidth . "px; width:" . $imageheight . "px;'>";
-			$renderer->doc .= '<svg xmlns="http://www.w3.org/2000/svg" width="'.$imageheight.'px" height="'.$imagewidth.'px" viewbox="0 0 '.$imageheight.' '.$imagewidth.'" style="line-height:0px;width:'.$imageheight.'px;height:'.$imagewidth.'px;">'.
-				'<metadata>image/svg+xml</metadata>'.
-				'<g transform="rotate(90 0 '.$imageheight.') translate(-'.$imageheight.' 0)">';
+		$sPathTemplateClass = dirname( __FILE__ ).DIRECTORY_SEPARATOR.'tpl'.DIRECTORY_SEPARATOR;;
+		$fDrawCase = function( $oCase, $iX, $iY ) use ( $opt, $sPathTemplateClass ){
+			
+			// search the associated class
+			$sCase = $oCase[ 'options' ][ 'case' ];
+			if( !file_exists( $sPathTemplateClass.'switchpanel.case.'.$sCase.'.class.php' ) ){
+				$sCase = $opt[ 'case' ];
+			}
+
+			require_once( $sPathTemplateClass.'switchpanel.case.'.$sCase.'.class.php' );
+			$sClassName = 'switchpanel_case_'.$sCase;
+
+			return $sClassName::getSvg( $oCase, $iX, $iY, $opt );
+		};
+		
+		// construction of SVG
+		$sSvg = '<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" height="'.$iHeightSvg.'px" width="'.$iWidthSvg.'px">'.
+			'<metadata>image/svg+xml</metadata>'.
+			'<rect fill="'.$opt[ 'switchColor' ].'" height="'.$iHeightSvg.'px" width="'.$iWidthSvg.'px" x="0" y="0" rx="'.( $opt[ 'showEars' ] ? 10 : 5 ).'" ry="'.( $opt[ 'showEars' ] ? 10 : 5 ).'" />';
+		
+		// inclusion of the logo and bolts
+		if( $opt[ 'showEars' ] ){
+			require_once( $sPathTemplateClass.'switchpanel.screw.none.class.php' );
+			if( !in_array( $opt[ 'logo' ], array( '', 'none' ), true ) ){
+				if( $opt[ 'logoLink' ] != '' ){
+					$sSvg .= '<a xlink:href="'.$opt[ 'logoLink' ].'" target="'.( $opt[ 'target' ] ).'" style="text-decoration:none">';
+				}
+				$sSvg .= '<image x="'.( ( $opt[ 'elementWidth' ] * 2 ) - ( $opt[ 'elementSeparatorWidth' ] + 30 ) ).'" y="'.$opt[ 'elementSeparatorHeight' ].'" width="30" height="30" xlink:href="'.$opt[ 'logo' ].'" />';
+				if( $opt[ 'logoLink' ] != '' ){
+					$sSvg .= '</a>';
+				}
+			}
+			$iHeightScrew = $iHeightSvg - ( ( $opt[ 'elementSeparatorHeight' ] * 2 ) + $opt[ 'screwHeight' ] );
+			$iNbrScrews = floor( $iHeightScrew / $opt[ 'screwHeightSpace' ] );
+			if( $iNbrScrews == 0 ){
+				$iNbrScrews++;
+			}
+			$iHeightScrew = $iHeightScrew / $iNbrScrews;
+			$iNbrScrews++;
+			if( $iNbrScrews == 1 ){
+				$iNbrScrews++;
+				$iHeightScrew = $iHeightSvg - ( ( $opt[ 'elementSeparatorHeight' ] * 2 ) + $opt[ 'screwHeight' ] );
+			}
+			
+			$iPosHeightScrew = $opt[ 'elementSeparatorHeight' ];
+			for( $i=1; $i<=$iNbrScrews; $i++ ){
+				$sSvg .= switchpanel_screw_none::getSvg( $opt[ 'elementSeparatorWidth' ], $iPosHeightScrew, $opt ).
+					switchpanel_screw_none::getSvg( ( $iWidthSvg - $opt[ 'elementSeparatorWidth' ] - $opt[ 'screwWidth' ] ), $iPosHeightScrew, $opt );
+				$iPosHeightScrew += $iHeightScrew;
+			}
+		}	
+		
+		// drawing of the elements
+		$iIndexY = 0;
+		foreach( $oElements as &$oElement ){
+			$iIndexX = $opt[ 'showEars' ] ? ( $opt[ 'elementWidth' ] * 2 ) : $opt[ 'elementSeparatorWidth' ];
+			$iIndexY += $opt[ 'elementSeparatorHeight' ];
+			if( $oElement[ 'type' ] == 'line' ){
+				$oCases = $oElement[ 'data' ];
+				for( $i=0; $i<$iNbrElementsWidth; $i++ ){
+					$oCase = array( 'case'=>'none' );
+					if( isset( $oCases[ $i ] ) ){
+						$oCase = $oCases[ $i ];
+					}					
+					$sSvg .= $fDrawCase( $oCase, $iIndexX, $iIndexY );
+					if( $i - 1 < $iNbrElementsWidth ){
+						$iIndexX += $opt[ 'elementSeparatorWidth' ];
+					}
+					$iIndexX += $opt[ 'elementWidth' ];
+
+					// if there are groups
+					if( $opt[ 'group' ] > 0 && ( $i + 1 < $iNbrElementsWidth ) && ( ( $i + 1 ) % $iGroup ) == 0 ){
+						$iIndexX += $opt[ 'groupSeparatorWidth' ];
+					}
+				}
+				$iIndexY += $opt[ 'elementHeight' ];
+			}else if( $oElement[ 'type' ] == 'text' ){
+				require_once( $sPathTemplateClass.'switchpanel.text.none.class.php' );
+				$sSvg .= switchpanel_text_none::getSvg( $oElement, $iIndexX, $iIndexY, $opt, $iWidthSvg );
+				$iHeightText = $opt[ 'textSize' ];
+				if( isset( $oElement[ 'options' ][ 'size' ] ) ){
+					$iHeightText = $oElement[ 'options' ][ 'size' ];
+				}
+				$iIndexY += $iHeightText;
+			}else if( $oElement[ 'type' ] == 'heightBar' ){
+				$iBarHeight = $opt[ 'barHeight' ];
+				if( isset( $oElement[ 'options' ][ 'height' ] ) ){
+					$iBarHeight = $oElement[ 'options' ][ 'height' ];
+				}
+				$iIndexY += $iBarHeight;
+			}
+		}
+		$sSvg .= '</svg>';
+		
+		// generation rendering
+		if ($mode != 'odt') {
+			$renderer->doc .= '<div style="overflow-x:auto;">'.$sSvg.'</div>';
 		} else {
-			$renderer->doc .= "<div style='height:" . $imageheight . "px; width:" . $imagewidth . "px;'>";
-			$renderer->doc .= '<svg xmlns="http://www.w3.org/2000/svg" width="'.$imagewidth.'px" height="'.$imageheight.'px" viewbox="0 0 '.$imagewidth.' '.$imageheight.'" style="line-height:0px;width:'.$imagewidth.'px;height:'.$imageheight.'px;">'.
-				'<metadata>image/svg+xml</metadata>';
+			// When exporting to ODT format always make the switchpannel as wide
+			// as the whole page without margins (but keep the width/height relation!). 
+			$widthInCm = $renderer->_getAbsWidthMindMargins();
+			$heightInCm = $widthInCm * ($iHeightSvg/$iWidthSvg);
+			$renderer->_addStringAsSVGImage($sSvg, $widthInCm.'cm', $heightInCm.'cm');
 		}
-		
-		// Draw a rounded rectangle for our patch panel
-		// grey for the patch panel, pjahn, 29.07.2014
-		if( $opt['rotate'] ){
-			$renderer->doc .=  '<rect stroke-width="5" fill="#808080" height="'.$imageheight.'px" width="'.$imagewidth.'px" x="0" y="0" rx="30" ry="30" />';
-		}else{
-			$renderer->doc .=  '<rect stroke-width="5" fill="#808080" height="100%" width="100%" x="0" y="0" rx="30" ry="30" />';
-		}
-
-		// original - color black for the panel
-		// Draw some mounting holes
-		$renderer->doc .= '<rect fill="#fff" x="20" y="20" width="30" height="17.6" ry="9" />';
-		$renderer->doc .= '<rect fill="#fff" x="' . ($imagewidth-20-30) . '" y="20" width="30" height="17.6" ry="9" />';
-		$renderer->doc .= '<rect fill="#fff" x="20" y="'. ($imageheight-20-17.6) .'" width="30" height="17.6" ry="9" />';
-		$renderer->doc .= '<rect fill="#fff" x="' . ($imagewidth-20-30) . '" y="' . ($imageheight-20-17.6) . '" width="30" height="17.6" ry="9" />';
-		// Add a label
-		$renderer->doc .= '<text transform="rotate(-90 70,' . $imageheight/2 . ') " text-anchor="middle" font-size="12" fill="#fff" y="' . $imageheight/2 . '" x="70">' . $opt['name'] . ' </text>';
-		
-		if ($opt['switch']) {
-			
-			if ($opt['switch'] == 1) {
-				$startPortEven = 1;
-				$startPortOdd = 2;
-			} else {
-                // MaxWinterstein 03.02.2015 modify port positioning according to 3com switches (2 above 1)
-                $startPortEven = 2;
-				$startPortOdd = 1;
-			}
-			
-			for ($row=1; $row <= $opt['rows']; $row++) {
-				// swerner 29.07.2014 modify port positioning according to hp switches
-
-				if ($row % 2 == 0) {
-					$port=$startPortOdd;
-				} else {
-					$port=$startPortEven;
-				}
-				for ($position=1; $position <= $portsPerRow; $position++) {
-						$renderer->doc .= $this->ethernet_svg($row, $position, $port, $items[$port], $opt, $imagewidth, $imageheight);
-						$port=$port+2;
-				}
-				if ($row % 2 == 0) {
-					$startPortOdd = $startPortOdd+(2*$portsPerRow);
-				} else {
-					$startPortEven = $startPortEven+(2*$portsPerRow);
-				}
-			}
-			
-		} else {
-			// std port drawing code */
-			for ($row=1; $row <= $opt['rows']; $row++) {
-		
-				// Calculate the starting and ending ports for this row.
-				$startPort = 1+$portsPerRow*($row-1);
-				$endPort = $portsPerRow+$portsPerRow*($row-1);
-				if ($endPort > $opt['ports']) { $endPort = $opt['ports']; }
-			
-				// Draw ethernet ports over the patch panel
-				for ($port=$startPort; $port <= $endPort ; $port++) {
-					$position = $port - $portsPerRow*($row-1);
-					$renderer->doc .= $this->ethernet_svg($row, $position, $port, $items[$port], $opt, $imagewidth, $imageheight);
-				}
-			}
-		}
-
-		if( $opt['rotate'] ){
-			$renderer->doc .= "</g>";
-		}
-		$renderer->doc .= "</svg>";	
-		$renderer->doc .= "</div></div>";
-		
-		// Button to show the CSV version
-		if( $opt['showSvg'] ){
-			$renderer->doc .= "<div class='patchpanel_csv'><span onclick=\"this.innerHTML = patchpanel_toggle_vis(document.getElementById('$csv_id'),'block')?'Hide CSV &uarr;':'Show CSV &darr;';\">Show CSV &darr;</span>"
-				."<pre style='display:none;' id='$csv_id'>$csv</pre>\n"
-				."</div>";
-		}
-		$renderer->doc .= "</div>";
-		
-		// Make sure the tooltip div gets created
-		$renderer->doc .= '<script type="text/javascript">patchpanel_create_tooltip_div();</script>';
-		
-		// Add a script that creates the tooltips
-		$renderer->doc .= '<script type="text/javascript">//<![CDATA[
-			function patchpanel_show_tooltip(evt, text) {
-				tooltip = jQuery("#patchpanel_tooltip");
-				tooltip.html(text);
-				tooltip.css({left: evt.clientX+10, top: evt.clientY+10, display: "block" });
-			}
-			function patchpanel_hide_tooltip() {
-				jQuery("#patchpanel_tooltip").css("display", "none");
-			}
-			//]]>
-		</script>';
-
 		return true;
 	}
 }
