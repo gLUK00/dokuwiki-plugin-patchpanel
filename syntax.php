@@ -17,7 +17,7 @@ if(!defined('DOKU_INC')) die();
  */
 class syntax_plugin_switchpanel extends DokuWiki_Syntax_Plugin {
 	private $_sName = "switchpanel";
-	private $_oTagsContent = array( 'line'=>array( 'number', 'color', 'case' ), 'text'=>array( 'bgColor', 'color', 'size', 'brColor', 'brRadius' ), 'heightBar'=>array( 'height' ) );
+	private $_oTagsContent = array( 'line'=>array( 'number', 'color', 'case', 'labelLeft', 'colorLabelLeft', 'labelRight', 'colorLabelRight' ), 'text'=>array( 'bgColor', 'color', 'size', 'brColor', 'brRadius' ), 'heightBar'=>array( 'height' ) );
 	private $_oTagsItemsContent = array( 'line_items'=>array( 'color', 'text', 'link', 'case', 'target' ) );
 
 	function getType(){ return 'substition'; }
@@ -48,6 +48,10 @@ class syntax_plugin_switchpanel extends DokuWiki_Syntax_Plugin {
 			'logoLink'=>'http://www.greenitsolutions.fr/',
 			'target'=>'_blank',
 			'showEars'=>true,
+			'labelLeft'=>'',
+			'labelRight'=>'',
+			'colorLabelLeft'=>'#fff',
+			'colorLabelRight'=>'#fff',
 			'case'=>'rj45',
 			'group'=>0,
 			'groupSeparatorWidth'=>18,
@@ -214,7 +218,7 @@ class syntax_plugin_switchpanel extends DokuWiki_Syntax_Plugin {
 				
 				// propagation properties
 				$oLine[ 'options' ] = array();
-				foreach( array( 'color', 'case' ) as $sProp ){
+				foreach( array( 'color', 'case', 'labelLeft', 'colorLabelLeft', 'labelRight', 'colorLabelRight' ) as $sProp ){
 					if( !isset( $oElement[ 'options' ][ $sProp ] ) ){
 						$oElement[ 'options' ][ $sProp ] = $opt[ $sProp ];
 						$oLine[ 'options' ][ $sProp ] = $oElement[ 'options' ][ $sProp ];
@@ -280,7 +284,9 @@ class syntax_plugin_switchpanel extends DokuWiki_Syntax_Plugin {
 					$oTmpData[ $i ] = isset( $oElement[ 'data' ][ $i ] ) ?
 						$oElement[ 'data' ][ $i ] :
 						array( 'number'=>$i, 'label'=>'', 
-							'options'=>array( 'color'=>$oElement[ 'options' ][ 'color' ], 'case'=>$oElement[ 'options' ][ 'case' ] ) );
+							'options'=>array( 'color'=>$oElement[ 'options' ][ 'color' ], 'case'=>$oElement[ 'options' ][ 'case' ],
+							'labelLeft'=>$oElement[ 'options' ][ 'labelLeft' ], 'colorLabelLeft'=>$oElement[ 'options' ][ 'colorLabelLeft' ],
+							'labelRight'=>$oElement[ 'options' ][ 'labelRight' ], 'colorLabelRight'=>$oElement[ 'options' ][ 'colorLabelRight' ] ) );
 				}			
 				$oData = array();
 				foreach( $oTmpData as $oLine ){
@@ -386,6 +392,7 @@ class syntax_plugin_switchpanel extends DokuWiki_Syntax_Plugin {
 		
 		// drawing of the elements
 		$iIndexY = 0;
+		$bFirstLine = true;
 		foreach( $oElements as &$oElement ){
 			$iIndexX = $opt[ 'showEars' ] ? ( $opt[ 'elementWidth' ] * 2 ) : $opt[ 'elementSeparatorWidth' ];
 			$iIndexY += $opt[ 'elementSeparatorHeight' ];
@@ -407,7 +414,25 @@ class syntax_plugin_switchpanel extends DokuWiki_Syntax_Plugin {
 						$iIndexX += $opt[ 'groupSeparatorWidth' ];
 					}
 				}
+				
+				if( $opt[ 'showEars' ] ){
+					if( isset( $oElement[ 'options' ][ 'labelLeft' ] ) && trim( $oElement[ 'options' ][ 'labelLeft' ] ) != '' ){
+						$iMoveX = 0;
+						if( $bFirstLine && !in_array( $opt[ 'logo' ], array( '', 'none' ), true ) && $iIndexY == $opt[ 'elementSeparatorHeight' ] ){
+							$iMoveX = $opt[ 'elementWidth' ] - $opt[ 'elementSeparatorWidth' ];
+						}
+						$sSvg .= '<text x="'.( $opt[ 'elementWidth' ] + ( $opt[ 'elementWidth' ] / 2 ) - $opt[ 'elementSeparatorWidth' ] - $iMoveX ).'" y="'.( $iIndexY + ( $opt[ 'elementHeight' ] / 1.5 ) + $opt[ 'elementSeparatorHeight' ] ).'" '.
+							'style="fill:'.$oElement[ 'options' ][ 'colorLabelLeft' ].';" font-size="22" '.
+							'text-anchor="middle">'.$oElement[ 'options' ][ 'labelLeft' ].'</text>';
+					}
+					if( isset( $oElement[ 'options' ][ 'labelRight' ] ) && trim( $oElement[ 'options' ][ 'labelRight' ] ) != '' ){
+						$sSvg .= '<text x="'.( $iIndexX + ( $opt[ 'elementWidth' ] / 2 ) ).'" y="'.( $iIndexY + ( $opt[ 'elementHeight' ] / 1.5 ) + $opt[ 'elementSeparatorHeight' ] ).'" '.
+								'style="fill:'.$oElement[ 'options' ][ 'colorLabelRight' ].';" font-size="22" '.
+								'text-anchor="middle">'.$oElement[ 'options' ][ 'labelRight' ].'</text>';
+					}
+				}				
 				$iIndexY += $opt[ 'elementHeight' ];
+				$bFirstLine = false;
 			}else if( $oElement[ 'type' ] == 'text' ){
 				require_once( $sPathTemplateClass.'switchpanel.text.none.class.php' );
 				$sSvg .= switchpanel_text_none::getSvg( $oElement, $iIndexX, $iIndexY, $opt, $iWidthSvg );
